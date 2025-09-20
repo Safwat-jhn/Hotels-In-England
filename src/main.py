@@ -1,6 +1,12 @@
 import sqlite3
 import pandas as pd
 from scraper import HotelScraper
+import os
+
+def ensure_output_dir():
+    """Create output directory if it doesn't exist"""
+    if not os.path.exists('output'):
+        os.makedirs('output')
 
 def export_to_excel(db_path='output/hotels.db', excel_path='output/hotels_data.xlsx'):
     """Export database to Excel for CRM upload"""
@@ -23,6 +29,10 @@ def export_to_excel(db_path='output/hotels.db', excel_path='output/hotels_data.x
     
     conn.close()
     
+    if df.empty:
+        print("No hotels with emails found to export")
+        return 0
+    
     # Export to Excel
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='Hotels', index=False)
@@ -33,36 +43,49 @@ def export_to_excel(db_path='output/hotels.db', excel_path='output/hotels_data.x
             max_length = max(len(str(cell.value)) for cell in column)
             worksheet.column_dimensions[column[0].column_letter].width = min(max_length + 2, 50)
     
+    print(f"Exported {len(df)} hotels to {excel_path}")
     return len(df)
 
 def main():
     """Main extraction process"""
-    print("Starting UK hotel extraction...")
+    print("=== UK Hotel Data Extraction ===")
+    print("Target: Director emails, UK phone format, CRM-ready")
+    print()
     
+    # Ensure output directory exists
+    ensure_output_dir()
+    
+    # Initialize scraper
     scraper = HotelScraper()
     
-    # Target directories
-    sources = [
-        "https://www.visitengland.com/accommodation/hotels",
-        "https://www.booking.com/searchresults.html?ss=England"
-    ]
+    # Run extraction from multiple sources
+    try:
+        scraper.scrape_uk_hotel_directories()
+    except KeyboardInterrupt:
+        print("\nExtraction interrupted by user")
+    except Exception as e:
+        print(f"Extraction error: {e}")
     
-    for source in sources:
-        print(f"Scraping: {source}")
-        try:
-            scraper.scrape_directory(source)
-        except Exception as e:
-            print(f"Error: {e}")
+    # Get statistics
+    stats = scraper.get_stats()
     
-    # Export results
-    hotel_count = export_to_excel()
-    total_count = scraper.get_hotel_count()
+    # Export to Excel
+    exported_count = export_to_excel()
     
-    print(f"\n=== RESULTS ===")
-    print(f"Hotels extracted: {hotel_count}")
-    print(f"Director email coverage: 100% (filtered)")
-    print(f"Output: output/hotels_data.xlsx")
-    print("Ready for CRM upload")
+    # Print results
+    print("\n=== EXTRACTION RESULTS ===")
+    print(f"Total hotels processed: {stats['total']}")
+    print(f"Hotels with emails: {stats['with_email']}")
+    print(f"Hotels with director names: {stats['with_director']}")
+    print(f"Fully verified records: {stats['verified']}")
+    print(f"Email coverage: {stats['email_coverage']:.1f}%")
+    print(f"Exported to Excel: {exported_count} records")
+    print()
+    print("Files created:")
+    print("- output/hotels.db (SQLite database)")
+    print("- output/hotels_data.xlsx (Excel for CRM)")
+    print()
+    print("✅ Ready for CRM upload!")
 
 if __name__ == "__main__":
     main()
